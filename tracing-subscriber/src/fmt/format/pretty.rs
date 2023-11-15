@@ -293,41 +293,43 @@ where
             writer.write_char('\n')?;
         }
 
-        let bold = writer.bold();
-        let span = event
-            .parent()
-            .and_then(|id| ctx.span(id))
-            .or_else(|| ctx.lookup_current());
+        if self.display_span_list {
+            let bold = writer.bold();
+            let span = event
+                .parent()
+                .and_then(|id| ctx.span(id))
+                .or_else(|| ctx.lookup_current());
 
-        let scope = span.into_iter().flat_map(|span| span.scope());
+            let scope = span.into_iter().flat_map(|span| span.scope());
 
-        for span in scope {
-            let meta = span.metadata();
-            if self.display_target {
-                write!(
-                    writer,
-                    "    {} {}::{}",
-                    dimmed.paint("in"),
-                    meta.target(),
-                    bold.paint(meta.name()),
-                )?;
-            } else {
-                write!(
-                    writer,
-                    "    {} {}",
-                    dimmed.paint("in"),
-                    bold.paint(meta.name()),
-                )?;
+            for span in scope {
+                let meta = span.metadata();
+                if self.display_target {
+                    write!(
+                        writer,
+                        "    {} {}::{}",
+                        dimmed.paint("in"),
+                        meta.target(),
+                        bold.paint(meta.name()),
+                    )?;
+                } else {
+                    write!(
+                        writer,
+                        "    {} {}",
+                        dimmed.paint("in"),
+                        bold.paint(meta.name()),
+                    )?;
+                }
+
+                let ext = span.extensions();
+                let fields = &ext
+                    .get::<FormattedFields<N>>()
+                    .expect("Unable to find FormattedFields in extensions; this is a bug");
+                if !fields.is_empty() {
+                    write!(writer, " {} {}", dimmed.paint("with"), fields)?;
+                }
+                writer.write_char('\n')?;
             }
-
-            let ext = span.extensions();
-            let fields = &ext
-                .get::<FormattedFields<N>>()
-                .expect("Unable to find FormattedFields in extensions; this is a bug");
-            if !fields.is_empty() {
-                write!(writer, " {} {}", dimmed.paint("with"), fields)?;
-            }
-            writer.write_char('\n')?;
         }
 
         writer.write_char('\n')

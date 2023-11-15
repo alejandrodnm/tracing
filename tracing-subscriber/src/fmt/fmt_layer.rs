@@ -528,6 +528,14 @@ where
         }
     }
 
+    /// Sets whether or not the span scope is displayed when formatting events.
+    pub fn with_span_list(self, display_span_list: bool) -> Layer<S, N, format::Format<L, T>, W> {
+        Layer {
+            fmt_event: self.fmt_event.with_span_list(display_span_list),
+            ..self
+        }
+    }
+
     /// Sets the layer being built to use a [less verbose formatter][super::format::Compact].
     pub fn compact(self) -> Layer<S, N, format::Format<format::Compact, T>, W>
     where
@@ -618,21 +626,6 @@ impl<S, T, W> Layer<S, format::JsonFields, format::Format<format::Json, T>, W> {
     ) -> Layer<S, format::JsonFields, format::Format<format::Json, T>, W> {
         Layer {
             fmt_event: self.fmt_event.with_current_span(display_current_span),
-            fmt_fields: format::JsonFields::new(),
-            ..self
-        }
-    }
-
-    /// Sets whether or not the formatter will include a list (from root to leaf)
-    /// of all currently entered spans in formatted events.
-    ///
-    /// See [`format::Json`][super::format::Json]
-    pub fn with_span_list(
-        self,
-        display_span_list: bool,
-    ) -> Layer<S, format::JsonFields, format::Format<format::Json, T>, W> {
-        Layer {
-            fmt_event: self.fmt_event.with_span_list(display_span_list),
             fmt_fields: format::JsonFields::new(),
             ..self
         }

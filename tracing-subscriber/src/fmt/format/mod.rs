@@ -409,6 +409,7 @@ pub struct Format<F = Full, T = SystemTime> {
     pub(crate) display_thread_name: bool,
     pub(crate) display_filename: bool,
     pub(crate) display_line_number: bool,
+    pub(crate) display_span_list: bool,
 }
 
 // === impl Writer ===
@@ -599,6 +600,7 @@ impl Default for Format<Full, SystemTime> {
             display_thread_name: false,
             display_filename: false,
             display_line_number: false,
+            display_span_list: true,
         }
     }
 }
@@ -619,6 +621,7 @@ impl<F, T> Format<F, T> {
             display_thread_name: self.display_thread_name,
             display_filename: self.display_filename,
             display_line_number: self.display_line_number,
+            display_span_list: self.display_span_list,
         }
     }
 
@@ -658,6 +661,7 @@ impl<F, T> Format<F, T> {
             display_thread_name: self.display_thread_name,
             display_filename: true,
             display_line_number: true,
+            display_span_list: self.display_span_list,
         }
     }
 
@@ -689,6 +693,7 @@ impl<F, T> Format<F, T> {
             display_thread_name: self.display_thread_name,
             display_filename: self.display_filename,
             display_line_number: self.display_line_number,
+            display_span_list: self.display_span_list,
         }
     }
 
@@ -718,6 +723,7 @@ impl<F, T> Format<F, T> {
             display_thread_name: self.display_thread_name,
             display_filename: self.display_filename,
             display_line_number: self.display_line_number,
+            display_span_list: self.display_span_list,
         }
     }
 
@@ -734,6 +740,7 @@ impl<F, T> Format<F, T> {
             display_thread_name: self.display_thread_name,
             display_filename: self.display_filename,
             display_line_number: self.display_line_number,
+            display_span_list: self.display_span_list,
         }
     }
 
@@ -815,6 +822,15 @@ impl<F, T> Format<F, T> {
             .with_file(display_location)
     }
 
+    /// If set to `false`, formatted events won't contain a list of all currently
+    /// entered spans.
+    pub fn with_span_list(self, display_span_list: bool) -> Format<F, T> {
+        Format {
+            display_span_list,
+            ..self
+        }
+    }
+
     #[inline]
     fn format_timestamp(&self, writer: &mut Writer<'_>) -> fmt::Result
     where
@@ -882,17 +898,6 @@ impl<T> Format<Json, T> {
         self.format.with_current_span(display_current_span);
         self
     }
-
-    /// Sets whether or not the formatter will include a list (from root to
-    /// leaf) of all currently entered spans in formatted events.
-    ///
-    /// See [`format::Json`][Json]
-    #[cfg(feature = "json")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "json")))]
-    pub fn with_span_list(mut self, display_span_list: bool) -> Format<Json, T> {
-        self.format.with_span_list(display_span_list);
-        self
-    }
 }
 
 impl<S, N, T> FormatEvent<S, N> for Format<Full, T>
@@ -958,28 +963,30 @@ where
 
         let dimmed = writer.dimmed();
 
-        if let Some(scope) = ctx.event_scope() {
-            let bold = writer.bold();
+        if self.display_span_list {
+            if let Some(scope) = ctx.event_scope() {
+                let bold = writer.bold();
 
-            let mut seen = false;
+                let mut seen = false;
 
-            for span in scope.from_root() {
-                write!(writer, "{}", bold.paint(span.metadata().name()))?;
-                seen = true;
+                for span in scope.from_root() {
+                    write!(writer, "{}", bold.paint(span.metadata().name()))?;
+                    seen = true;
 
-                let ext = span.extensions();
-                if let Some(fields) = &ext.get::<FormattedFields<N>>() {
-                    if !fields.is_empty() {
-                        write!(writer, "{}{}{}", bold.paint("{"), fields, bold.paint("}"))?;
+                    let ext = span.extensions();
+                    if let Some(fields) = &ext.get::<FormattedFields<N>>() {
+                        if !fields.is_empty() {
+                            write!(writer, "{}{}{}", bold.paint("{"), fields, bold.paint("}"))?;
+                        }
                     }
+                    write!(writer, "{}", dimmed.paint(":"))?;
                 }
-                write!(writer, "{}", dimmed.paint(":"))?;
-            }
 
-            if seen {
-                writer.write_char(' ')?;
-            }
-        };
+                if seen {
+                    writer.write_char(' ')?;
+                }
+            };
+        }
 
         if self.display_target {
             write!(
@@ -1084,17 +1091,19 @@ where
             write!(writer, "{:0>2?} ", std::thread::current().id())?;
         }
 
-        let fmt_ctx = {
-            #[cfg(feature = "ansi")]
-            {
-                FmtCtx::new(ctx, event.parent(), writer.has_ansi_escapes())
-            }
-            #[cfg(not(feature = "ansi"))]
-            {
-                FmtCtx::new(&ctx, event.parent())
-            }
-        };
-        write!(writer, "{}", fmt_ctx)?;
+        if self.display_span_list {
+            let fmt_ctx = {
+                #[cfg(feature = "ansi")]
+                {
+                    FmtCtx::new(ctx, event.parent(), writer.has_ansi_escapes())
+                }
+                #[cfg(not(feature = "ansi"))]
+                {
+                    FmtCtx::new(&ctx, event.parent())
+                }
+            };
+            write!(writer, "{}", fmt_ctx)?;
+        }
 
         let dimmed = writer.dimmed();
 
@@ -1139,15 +1148,17 @@ where
 
         ctx.format_fields(writer.by_ref(), event)?;
 
-        for span in ctx
-            .event_scope()
-            .into_iter()
-            .flat_map(crate::registry::Scope::from_root)
-        {
-            let exts = span.extensions();
-            if let Some(fields) = exts.get::<FormattedFields<N>>() {
-                if !fields.is_empty() {
-                    write!(writer, " {}", dimmed.paint(&fields.fields))?;
+        if self.display_span_list {
+            for span in ctx
+                .event_scope()
+                .into_iter()
+                .flat_map(crate::registry::Scope::from_root)
+            {
+                let exts = span.extensions();
+                if let Some(fields) = exts.get::<FormattedFields<N>>() {
+                    if !fields.is_empty() {
+                        write!(writer, " {}", dimmed.paint(&fields.fields))?;
+                    }
                 }
             }
         }
@@ -1763,7 +1774,8 @@ pub(super) mod test {
             .with_level(false)
             .with_target(false)
             .with_thread_ids(false)
-            .with_thread_names(false);
+            .with_thread_names(false)
+            .with_span_list(false);
         #[cfg(feature = "ansi")]
         let subscriber = subscriber.with_ansi(false);
         assert_info_hello(subscriber, make_writer, "hello\n")
@@ -2042,6 +2054,15 @@ pub(super) mod test {
         }
 
         #[test]
+        fn without_span_list() {
+            let expected = "fake time tracing_subscriber::fmt::format::test: hello\n";
+            test_overridden_parents(
+                expected,
+                crate::fmt::Subscriber::builder().with_span_list(false),
+            )
+        }
+
+        #[test]
         fn overridden_parents_in_scope() {
             test_overridden_parents_in_scope(
                 "fake time span3{span=3}: tracing_subscriber::fmt::format::test: hello\n",
@@ -2088,6 +2109,17 @@ pub(super) mod test {
         }
 
         #[test]
+        fn without_span_list() {
+            let expected = "fake time tracing_subscriber::fmt::format::test: hello\n";
+            test_overridden_parents(
+                expected,
+                crate::fmt::Subscriber::builder()
+                    .compact()
+                    .with_span_list(false),
+            )
+        }
+
+        #[test]
         fn overridden_parents_in_scope() {
             test_overridden_parents_in_scope(
                 "fake time span3: tracing_subscriber::fmt::format::test: hello span=3\n",
@@ -2114,6 +2146,54 @@ pub(super) mod test {
             );
 
             assert_info_hello_ignore_numeric(subscriber, make_writer, &expected)
+        }
+
+        fn test_overridden_parents<T>(
+            expected: &str,
+            builder: crate::fmt::SubscriberBuilder<Pretty, Format<T>>,
+        ) where
+            Format<T, MockTime>: FormatEvent<crate::Registry, Pretty>,
+            T: Send + Sync + 'static,
+        {
+            let make_writer = MockMakeWriter::default();
+            let subscriber = builder
+                .with_writer(make_writer.clone())
+                .with_level(false)
+                .with_ansi(false)
+                .with_timer(MockTime)
+                .finish();
+
+            with_default(subscriber, || {
+                let span1 = tracing::info_span!("span1", span = 1);
+                let span2 = tracing::info_span!(parent: &span1, "span2", span = 2);
+                tracing::info!(parent: &span2, "hello");
+            });
+            assert_eq!(expected, make_writer.get_string());
+        }
+
+        #[test]
+        fn overridden_parents() {
+            let expected = r"  fake time tracing_subscriber::fmt::format::test::pretty: hello
+    at tracing-subscriber/src/fmt/format/mod.rs:2169
+    in tracing_subscriber::fmt::format::test::pretty::span2 with span: 2
+    in tracing_subscriber::fmt::format::test::pretty::span1 with span: 1
+
+";
+            test_overridden_parents(expected, crate::fmt::Subscriber::builder().pretty())
+        }
+
+        #[test]
+        fn without_span_list() {
+            let expected = r"  fake time tracing_subscriber::fmt::format::test::pretty: hello
+    at tracing-subscriber/src/fmt/format/mod.rs:2169
+
+";
+            test_overridden_parents(
+                expected,
+                crate::fmt::Subscriber::builder()
+                    .pretty()
+                    .with_span_list(false),
+            )
         }
     }
 

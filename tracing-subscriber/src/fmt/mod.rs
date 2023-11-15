@@ -735,6 +735,18 @@ where
         }
     }
 
+    /// Sets whether or not the JSON subscriber being built will include a list
+    /// of all currently entered spans in formatted events.
+    pub fn with_span_list(
+        self,
+        display_span_list: bool,
+    ) -> SubscriberBuilder<N, format::Format<L, T>, F, W> {
+        SubscriberBuilder {
+            inner: self.inner.with_span_list(display_span_list),
+            ..self
+        }
+    }
+
     /// Sets the subscriber being built to use a less verbose formatter.
     ///
     /// See [`format::Compact`].
@@ -805,20 +817,6 @@ impl<T, F, W> SubscriberBuilder<format::JsonFields, format::Format<format::Json,
         SubscriberBuilder {
             filter: self.filter,
             inner: self.inner.with_current_span(display_current_span),
-        }
-    }
-
-    /// Sets whether or not the JSON subscriber being built will include a list (from
-    /// root to leaf) of all currently entered spans in formatted events.
-    ///
-    /// See [`format::Json`] for details.
-    pub fn with_span_list(
-        self,
-        display_span_list: bool,
-    ) -> SubscriberBuilder<format::JsonFields, format::Format<format::Json, T>, F, W> {
-        SubscriberBuilder {
-            filter: self.filter,
-            inner: self.inner.with_span_list(display_span_list),
         }
     }
 }
